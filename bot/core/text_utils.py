@@ -17,6 +17,7 @@ CAPTION_FORMAT = """
 ➥ 𝙴𝚙𝚒𝚜𝚘𝚍𝚎 : {ep_no}
 ➥ 𝙰𝚞𝚍𝚒𝚘 : 𝙼𝚞𝚕𝚝𝚒 𝚀𝚞𝚊𝚕𝚒𝚝𝚢 [𝚂𝚞𝚋]</b>
 <b>──────────────────────────</b>
+<b>@Anime_Noir | @Noir_Network</b>
 """
 
 GENRES_EMOJI = {"Action": "👊", "Adventure": choice(['🪂', '🧗‍♀']), "Comedy": "🤣", "Drama": " 🎭", "Ecchi": choice(['💋', '🥵']), "Fantasy": choice(['🧞', '🧞‍♂', '🧞‍♀','🌗']), "Hentai": "🔞", "Horror": "☠", "Mahou Shoujo": "☯", "Mecha": "🤖", "Music": "🎸", "Mystery": "🔮", "Psychological": "♟", "Romance": "💞", "Sci-Fi": "🛸", "Slice of Life": choice(['☘','🍁']), "Sports": "⚽️", "Supernatural": "🫧", "Thriller": choice(['🥶', '🔪','🤯'])}
