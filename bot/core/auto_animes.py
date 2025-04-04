@@ -7,6 +7,7 @@ from traceback import format_exc
 from base64 import urlsafe_b64encode
 from time import time
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.errors import ChannelInvalid, PeerIdInvalid
 
 from bot import bot, bot_loop, Var, ani_cache, ffQueue, ffLock, ff_queued
 from .tordownload import TorDownloader
@@ -24,7 +25,26 @@ btn_formatter = {
     '360':'𝟯𝟲𝟬𝗽'
 }
 
+async def verify_channel_access():
+    """Verify the bot has access to the main channel"""
+    try:
+        chat = await bot.get_chat(Var.MAIN_CHANNEL)
+        if not chat:
+            raise ValueError("Channel not found")
+        member = await bot.get_chat_member(Var.MAIN_CHANNEL, (await bot.get_me()).id)
+        if member.status not in ['creator', 'administrator', 'member']:
+            raise ValueError("Bot doesn't have sufficient privileges")
+        return True
+    except (ChannelInvalid, PeerIdInvalid, ValueError) as e:
+        await rep.report(f"Channel access verification failed: {str(e)}", "critical")
+        return False
+    except Exception as e:
+        await rep.report(f"Unexpected error in channel verification: {format_exc()}", "critical")
+        return False
+
 async def fetch_animes():
+    if not await verify_channel_access():
+        return
     await rep.report("Fetch Animes Started !!", "info")
     while True:
         await asleep(60)
@@ -57,19 +77,30 @@ async def get_animes(name, torrent, force=False):
             
             await rep.report(f"New Anime Torrent Found!\n\n{name}", "info")
             
-            # Try to send message to channel
+            # Try to send to channel with multiple fallbacks
+            post_msg = None
             try:
-                post_msg = await bot.send_photo(
-                    Var.MAIN_CHANNEL,
-                    photo=await aniInfo.get_poster(),
-                    caption=await aniInfo.get_caption()
-                )
+                poster = await aniInfo.get_poster()
+                caption = await aniInfo.get_caption()
+                
+                try:
+                    post_msg = await bot.send_photo(
+                        Var.MAIN_CHANNEL,
+                        photo=poster,
+                        caption=caption
+                    )
+                except Exception as photo_error:
+                    await rep.report(f"Photo send failed, trying text: {str(photo_error)}", "warning")
+                    try:
+                        post_msg = await sendMessage(Var.MAIN_CHANNEL, f"{caption}\n\nPoster: {poster}")
+                        if isinstance(post_msg, str):  # If sendMessage failed
+                            raise ValueError(post_msg)
+                    except Exception as text_error:
+                        await rep.report(f"Text send also failed: {str(text_error)}", "error")
+                        return
             except Exception as e:
-                await rep.report(f"Failed to send photo, trying text: {str(e)}", "warning")
-                post_msg = await sendMessage(Var.MAIN_CHANNEL, f"{await aniInfo.get_caption()}\n\nPoster: {await aniInfo.get_poster()}")
-                if isinstance(post_msg, str):  # If sendMessage failed
-                    await rep.report(f"Failed to send message to channel: {post_msg}", "error")
-                    return
+                await rep.report(f"Failed to send to channel: {str(e)}", "error")
+                return
             
             await asleep(1.5)
             stat_msg = await sendMessage(Var.MAIN_CHANNEL, f"‣ <b>Anime Name :</b> <b><i>{name}</i></b>\n\n<i>Downloading...</i>")
