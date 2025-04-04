@@ -45,13 +45,17 @@ class TorDownloader:
             
             connector = TCPConnector(limit=0, force_close=True, enable_cleanup_closed=True)
             async with ClientSession(connector=connector) as session:
-                async with session.get(url, timeout=60) as response:
-                    if response.status != 200:
-                        raise Exception(f"HTTP Error {response.status}")
-                    async with aiopen(des_dir, 'wb') as file:
-                        async for chunk in response.content.iter_any():
-                            await file.write(chunk)
-                    return des_dir
+                try:
+                    async with session.get(url, timeout=60) as response:
+                        if response.status != 200:
+                            raise Exception(f"HTTP Error {response.status}")
+                        async with aiopen(des_dir, 'wb') as file:
+                            async for chunk in response.content.iter_any():
+                                await file.write(chunk)
+                        return des_dir
+                except Exception as e:
+                    await rep.report(f"Failed to download torrent file from {url}: {str(e)}", "error")
+                    return None
         except Exception as e:
-            await rep.report(f"Failed to download torrent file: {format_exc()}", "error")
+            await rep.report(f"Failed to get torrent file: {format_exc()}", "error")
             return None
