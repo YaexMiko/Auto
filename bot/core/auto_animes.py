@@ -38,12 +38,15 @@ async def get_animes(name, torrent, force=False):
         aniInfo = TextEditor(name)
         await aniInfo.load_anilist()
         ani_id, ep_no = aniInfo.adata.get('id'), aniInfo.pdata.get("episode_number")
+        
         if ani_id not in ani_cache['ongoing']:
             ani_cache['ongoing'].add(ani_id)
         elif not force:
             return
+            
         if not force and ani_id in ani_cache['completed']:
             return
+            
         if force or (not (ani_data := await db.getAnime(ani_id)) \
             or (ani_data and not (qual_data := ani_data.get(ep_no))) \
             or (ani_data and qual_data and not all(qual for qual in qual_data.values()))):
@@ -53,15 +56,26 @@ async def get_animes(name, torrent, force=False):
                 return
             
             await rep.report(f"New Anime Torrent Found!\n\n{name}", "info")
-            post_msg = await bot.send_photo(
-                Var.MAIN_CHANNEL,
-                photo=await aniInfo.get_poster(),
-                caption=await aniInfo.get_caption()
-            )
-            #post_msg = await sendMessage(Var.MAIN_CHANNEL, (await aniInfo.get_caption()).format(await aniInfo.get_poster()), invert_media=True)
+            
+            # Try sending photo first, fall back to text message if fails
+            try:
+                poster = await aniInfo.get_poster()
+                caption = await aniInfo.get_caption()
+                post_msg = await bot.send_photo(
+                    Var.MAIN_CHANNEL,
+                    photo=poster,
+                    caption=caption
+                )
+            except Exception as e:
+                await rep.report(f"Photo send failed, falling back to text: {str(e)}", "warning")
+                post_msg = await sendMessage(
+                    Var.MAIN_CHANNEL, 
+                    f"{caption}\n\nPoster: {poster}" if poster else caption
+                )
             
             await asleep(1.5)
             stat_msg = await sendMessage(Var.MAIN_CHANNEL, f"‣ <b>Anime Name :</b> <b><i>{name}</i></b>\n\n<i>Downloading...</i>")
+            
             dl = await TorDownloader("./downloads").download(torrent, name)
             if not dl or not ospath.exists(dl):
                 await rep.report(f"File Download Incomplete, Try Again", "error")
@@ -88,22 +102,22 @@ async def get_animes(name, torrent, force=False):
                 try:
                     out_path = await FFEncoder(stat_msg, dl, filename, qual).start_encode()
                 except Exception as e:
-                    await rep.report(f"Error: {e}, Cancelled,  Retry Again !", "error")
+                    await rep.report(f"Error: {e}, Cancelled, Retry Again !", "error")
                     await stat_msg.delete()
                     ffLock.release()
                     return
-                await rep.report("Succesfully Compressed Now Going To Upload...", "info")
+                await rep.report("Successfully Compressed Now Going To Upload...", "info")
                 
                 await editMessage(stat_msg, f"‣ <b>Anime Name :</b> <b><i>{filename}</i></b>\n\n<i>Ready to Upload...</i>")
                 await asleep(1.5)
                 try:
                     msg = await TgUploader(stat_msg).upload(out_path, qual)
                 except Exception as e:
-                    await rep.report(f"Error: {e}, Cancelled,  Retry Again !", "error")
+                    await rep.report(f"Error: {e}, Cancelled, Retry Again !", "error")
                     await stat_msg.delete()
                     ffLock.release()
                     return
-                await rep.report("Succesfully Uploaded File into Tg...", "info")
+                await rep.report("Successfully Uploaded File into Tg...", "info")
                 
                 msg_id = msg.id
                 link = f"https://telegram.me/{(await bot.get_me()).username}?start={await encode('get-'+str(msg_id * abs(Var.FILE_STORE)))}"
@@ -123,13 +137,17 @@ async def get_animes(name, torrent, force=False):
             await aioremove(dl)
         ani_cache['completed'].add(ani_id)
     except Exception as error:
-        await rep.report(format_exc(), "error")
+        await rep.report(f"Error in get_animes: {str(error)}\n\n{format_exc()}", "error")
 
 async def extra_utils(msg_id, out_path):
-    msg = await bot.get_messages(Var.FILE_STORE, message_ids=msg_id)
+    try:
+        msg = await bot.get_messages(Var.FILE_STORE, message_ids=msg_id)
 
-    if Var.BACKUP_CHANNEL != 0:
-        for chat_id in Var.BACKUP_CHANNEL.split():
-            await msg.copy(int(chat_id))
-            
-    # MediaInfo, ScreenShots, Sample Video ( Add-ons Features )
+        if Var.BACKUP_CHANNEL != 0:
+            for chat_id in Var.BACKUP_CHANNEL.split():
+                try:
+                    await msg.copy(int(chat_id))
+                except Exception as e:
+                    await rep.report(f"Failed to backup to {chat_id}: {str(e)}", "warning")
+    except Exception as e:
+        await rep.report(f"Error in extra_utils: {str(e)}", "error")
