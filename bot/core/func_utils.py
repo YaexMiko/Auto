@@ -91,8 +91,13 @@ async def get_telegraph(out):
 async def sendMessage(chat, text, buttons=None, get_error=False, **kwargs):
     try:
         if isinstance(chat, int):
-            return await bot.send_message(chat_id=chat, text=text, disable_web_page_preview=True,
-                                        disable_notification=False, reply_markup=buttons, **kwargs)
+            try:
+                return await bot.send_message(chat_id=chat, text=text, disable_web_page_preview=True,
+                                            disable_notification=False, reply_markup=buttons, **kwargs)
+            except ValueError as e:
+                if "Peer id invalid" in str(e):
+                    await rep.report(f"Invalid channel ID: {chat}. Please check Var.MAIN_CHANNEL value.", "error")
+                raise
         else:
             return await chat.reply(text=text, quote=True, disable_web_page_preview=True, disable_notification=False,
                                     reply_markup=buttons, **kwargs)
@@ -110,7 +115,7 @@ async def sendMessage(chat, text, buttons=None, get_error=False, **kwargs):
         
 async def editMessage(msg, text, buttons=None, get_error=False, **kwargs):
     try:
-        if not msg:
+        if not msg or isinstance(msg, str):
             return None
         return await msg.edit_text(text=text, disable_web_page_preview=True, 
                                         reply_markup=buttons, **kwargs)
