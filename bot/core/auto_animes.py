@@ -57,38 +57,44 @@ async def get_animes(name, torrent, force=False):
             
             await rep.report(f"New Anime Torrent Found!\n\n{name}", "info")
             
-            # Try sending photo first, fall back to text message if fails
+            # Try to send message to channel
             try:
-                poster = await aniInfo.get_poster()
-                caption = await aniInfo.get_caption()
                 post_msg = await bot.send_photo(
                     Var.MAIN_CHANNEL,
-                    photo=poster,
-                    caption=caption
+                    photo=await aniInfo.get_poster(),
+                    caption=await aniInfo.get_caption()
                 )
             except Exception as e:
-                await rep.report(f"Photo send failed, falling back to text: {str(e)}", "warning")
-                post_msg = await sendMessage(
-                    Var.MAIN_CHANNEL, 
-                    f"{caption}\n\nPoster: {poster}" if poster else caption
-                )
+                await rep.report(f"Failed to send photo, trying text: {str(e)}", "warning")
+                post_msg = await sendMessage(Var.MAIN_CHANNEL, f"{await aniInfo.get_caption()}\n\nPoster: {await aniInfo.get_poster()}")
+                if isinstance(post_msg, str):  # If sendMessage failed
+                    await rep.report(f"Failed to send message to channel: {post_msg}", "error")
+                    return
             
             await asleep(1.5)
             stat_msg = await sendMessage(Var.MAIN_CHANNEL, f"‣ <b>Anime Name :</b> <b><i>{name}</i></b>\n\n<i>Downloading...</i>")
+            if isinstance(stat_msg, str):  # If sendMessage failed
+                await rep.report(f"Failed to send status message: {stat_msg}", "error")
+                return
             
             dl = await TorDownloader("./downloads").download(torrent, name)
             if not dl or not ospath.exists(dl):
                 await rep.report(f"File Download Incomplete, Try Again", "error")
-                await stat_msg.delete()
+                try:
+                    if not isinstance(stat_msg, str):
+                        await stat_msg.delete()
+                except:
+                    pass
                 return
 
-            post_id = post_msg.id
+            post_id = post_msg.id if hasattr(post_msg, 'id') else None
             ffEvent = Event()
-            ff_queued[post_id] = ffEvent
+            if post_id:
+                ff_queued[post_id] = ffEvent
             if ffLock.locked():
                 await editMessage(stat_msg, f"‣ <b>Anime Name :</b> <b><i>{name}</i></b>\n\n<i>Queued to Encode...</i>")
                 await rep.report("Added Task to Queue...", "info")
-            await ffQueue.put(post_id)
+            await ffQueue.put(post_id if post_id else 0)
             await ffEvent.wait()
             
             await ffLock.acquire()
@@ -103,7 +109,11 @@ async def get_animes(name, torrent, force=False):
                     out_path = await FFEncoder(stat_msg, dl, filename, qual).start_encode()
                 except Exception as e:
                     await rep.report(f"Error: {e}, Cancelled, Retry Again !", "error")
-                    await stat_msg.delete()
+                    try:
+                        if not isinstance(stat_msg, str):
+                            await stat_msg.delete()
+                    except:
+                        pass
                     ffLock.release()
                     return
                 await rep.report("Successfully Compressed Now Going To Upload...", "info")
@@ -114,7 +124,11 @@ async def get_animes(name, torrent, force=False):
                     msg = await TgUploader(stat_msg).upload(out_path, qual)
                 except Exception as e:
                     await rep.report(f"Error: {e}, Cancelled, Retry Again !", "error")
-                    await stat_msg.delete()
+                    try:
+                        if not isinstance(stat_msg, str):
+                            await stat_msg.delete()
+                    except:
+                        pass
                     ffLock.release()
                     return
                 await rep.report("Successfully Uploaded File into Tg...", "info")
@@ -122,18 +136,22 @@ async def get_animes(name, torrent, force=False):
                 msg_id = msg.id
                 link = f"https://telegram.me/{(await bot.get_me()).username}?start={await encode('get-'+str(msg_id * abs(Var.FILE_STORE)))}"
                 
-                if post_msg:
+                if hasattr(post_msg, 'edit_message'):
                     if len(btns) != 0 and len(btns[-1]) == 1:
                         btns[-1].insert(1, InlineKeyboardButton(f"{btn_formatter[qual]} - {convertBytes(msg.document.file_size)}", url=link))
                     else:
                         btns.append([InlineKeyboardButton(f"{btn_formatter[qual]} - {convertBytes(msg.document.file_size)}", url=link)])
-                    await editMessage(post_msg, post_msg.caption.html if post_msg.caption else "", InlineKeyboardMarkup(btns))
+                    await editMessage(post_msg, post_msg.caption.html if hasattr(post_msg, 'caption') and post_msg.caption else "", InlineKeyboardMarkup(btns))
                     
-                await db.saveAnime(ani_id, ep_no, qual, post_id)
+                await db.saveAnime(ani_id, ep_no, qual, post_id if post_id else 0)
                 bot_loop.create_task(extra_utils(msg_id, out_path))
             ffLock.release()
             
-            await stat_msg.delete()
+            try:
+                if not isinstance(stat_msg, str):
+                    await stat_msg.delete()
+            except:
+                pass
             await aioremove(dl)
         ani_cache['completed'].add(ani_id)
     except Exception as error:
